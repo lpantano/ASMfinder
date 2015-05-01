@@ -8,9 +8,9 @@ with open("requirements.txt", "r") as f:
         install_requires = [x.strip() for x in f.readlines() if not x.startswith("#")]
 
 
-setup(name='ams',
+setup(name='asm',
       version='0.99.1',
-      description='allele methylation specific',
+      description='allele specific methylation',
       # long_description=readme(),
       classifiers=[
         'Development Status :: 3 - Alpha',
