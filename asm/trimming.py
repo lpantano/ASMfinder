@@ -1,6 +1,7 @@
 import os.path as op
 from bcbio.utils import splitext_plus, file_exists, safe_makedir
-from bcbio.provenance import do, find_cmd
+from bcbio.provenance import do
+from bcbio.provenance.do import find_cmd
 from bcbio.distributed.transaction import file_transaction, tx_tmpdir
 import shutil
 

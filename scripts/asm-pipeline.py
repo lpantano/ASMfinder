@@ -22,7 +22,7 @@ from bcbio.utils import file_exists, splitext_plus, tmpfile, safe_makedir
 # from ecov.total import _calc_total_exome_coverage
 # from ecov.bias import calculate_bias_over_multiple_regions
 # from ecov.variants import calc_variants_stats
-from asm.prepare import prepare
+from asm.trimming import prepare
 
 
 def select_regions(args):
