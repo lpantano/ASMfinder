@@ -2,6 +2,8 @@
 calculate coverage across a list of regions
 """
 import os
+import os.path as op
+import yaml
 
 from argparse import ArgumentParser
 # import matplotlib.pyplot as plt
@@ -18,12 +20,41 @@ import pybedtools
 # from bcbio.provenance import do
 from bcbio.distributed.transaction import file_transaction
 from bcbio.utils import file_exists, splitext_plus, tmpfile, safe_makedir
+from bcbio.install import _get_data_dir
 
 # from ecov.total import _calc_total_exome_coverage
 # from ecov.bias import calculate_bias_over_multiple_regions
 # from ecov.variants import calc_variants_stats
 from asm.trimming import prepare
+from asm.align import create_bam
+from asm.bissnp import call_variations
 
+
+def _update_algorithm(data, resources):
+    """
+    Update algorithm dict with new cores set
+    """
+    new_data = []
+    for sample in data:
+        sample['config']['algorithm'] = resources
+        new_data.append(sample)
+    return new_data
+
+def _prepare_samples(args):
+    """
+    create dict for each sample having all information
+    """
+    system_config = os.path.join(_get_data_dir(), "galaxy", "bcbio_system.yaml")
+    config = yaml.load(open(system_config))
+    config['algorithm'] = {}
+    data = []
+    for sample in args.files:
+        dt = {}
+        dt['name'] = splitext_plus(op.basename(sample))[0]
+        dt['config'] = config
+        dt['fastq'] = op.abspath(sample)
+        data.append(dt)
+    return data
 
 def select_regions(args):
     """
@@ -51,11 +82,23 @@ def select_regions(args):
                         if int(frmt['CU']) > 10 and int(frmt['CM']) > 10:
                             print >> out_handle, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (chrom, pos, pos + 1, frmt['CU'], frmt['CM'], cs, gene, sample)
 
+def detect_positions(data, args):
+    assert args.reference, "Need --reference"
+    assert args.index, "Need --index"
+    assert args.files, "Need a set of fastq files"
+    assert args.snp, "Need --snp"
 
-def detect_positions(args):
     resources = {'name': 'trimming', 'mem': 4, 'cores': 1}
-    cluster.send_job(prepare, args.files, args, resources)
+    data = _update_algorithm(data, resources)
+    cluster.send_job(prepare, data, args, resources)
 
+    resources = {'name': 'align', 'mem': 16, 'cores': 1}
+    data = _update_algorithm(data, resources)
+    cluster.send_job(create_bam, data, args, resources)
+
+    resources = {'name': 'bissnp', 'mem': 8, 'cores': 2}
+    data = _update_algorithm(data, resources)
+    cluster.send_job(call_variations, data, args, resources)
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
@@ -63,6 +106,10 @@ if __name__ == "__main__":
     parser.add_argument("--region", help="bed file with regions.")
     parser.add_argument("--reference", help="genome fasta file.")
     parser.add_argument("--index", help="genome index for bismark.")
+    parser.add_argument("--is_rrbs", action="store_true", help="RRBS data.")
+    parser.add_argument("--is_directional", action="store_true", help="is directional sequencing.")
+    parser.add_argument("--snp", help="SNPdb database.")
+
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
     parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection'])
@@ -70,10 +117,8 @@ if __name__ == "__main__":
     parser.add_argument("--seed", help="replication of sampling")
     args = parser.parse_args()
 
-    if os.path.exists(args.out):
-        os.remove(args.out)
-
     if args.run == 'select':
         select_regions(args)
     if args.run == "detection":
-        detect_positions(args)
+        data = _prepare_samples(args)
+        detect_positions(data, args)
