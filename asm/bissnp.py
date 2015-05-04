@@ -13,7 +13,9 @@ def _count_covars(in_bam, sample, workdir, snp, reference, config):
     bissnp = do.find_cmd("bissnp")
     basename = sample
     num_cores = config['algorithm'].get('cores', 1)
-    cmd = ("{bissnp} -R {reference} -I {in_bam} "
+    memory = config['algorithm'].get('memory', 4)
+    jvm_opts = "-Xms750m -Xmx%sg" % memory
+    cmd = ("{bissnp} {jvm_opts} -R {reference} -I {in_bam} "
            "-T BisulfiteCountCovariates "
            "-knownSites {snp} "
            "-cov ReadGroupCovariate "
@@ -35,12 +37,13 @@ def _recal_BQ_score(in_bam, sample, workdir, counts_file, reference, config):
     bissnp = do.find_cmd("bissnp")
     basename = sample
     num_cores = config['algorithm'].get('cores', 1)
-    cmd = ("{bissnp} -R {reference} -I {in_bam} "
+    memory = config['algorithm'].get('memory', 4)
+    jvm_opts = "-Xms750m -Xmx%sg" % memory
+    cmd = ("{bissnp} {jvm_opts} -R {reference} -I {in_bam} "
            "-T BisulfiteTableRecalibration "
            "-recalFile {counts_file} "
            "-o {tx_out} "
-           "-maxQ 60 "
-           "-nt {num_cores} ")
+           "-maxQ 60 ")
     out_recal = op.join(workdir, sample + "_recal1.bam")
     if not file_exists(out_recal):
         with file_transaction(out_recal) as tx_out:
@@ -56,7 +59,9 @@ def _call_vcf(in_bam, sample, workdir, reference, config):
     bissnp = do.find_cmd("bissnp")
     basename = sample
     num_cores = config['algorithm'].get('cores', 1)
-    cmd = ("{bissnp} -R {reference} -I {in_bam} "
+    memory = config['algorithm'].get('memory', 4)
+    jvm_opts = "-Xms750m -Xmx%sg" % memory
+    cmd = ("{bissnp} {jvm_opts} -R {reference} -I {in_bam} "
            "-T BisulfiteGenotyper "
            "-vfn1 {tx_out} "
            "-vfn2 {out_vfn2} "

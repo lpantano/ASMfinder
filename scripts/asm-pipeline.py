@@ -92,11 +92,11 @@ def detect_positions(data, args):
     data = _update_algorithm(data, resources)
     cluster.send_job(prepare, data, args, resources)
 
-    resources = {'name': 'align', 'mem': 16, 'cores': 1}
+    resources = {'name': 'align', 'mem': 16, 'cores': 8}
     data = _update_algorithm(data, resources)
     cluster.send_job(create_bam, data, args, resources)
 
-    resources = {'name': 'bissnp', 'mem': 8, 'cores': 2}
+    resources = {'name': 'bissnp', 'mem': 24, 'cores': 8}
     data = _update_algorithm(data, resources)
     cluster.send_job(call_variations, data, args, resources)
 
