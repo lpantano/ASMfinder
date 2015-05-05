@@ -9,7 +9,7 @@ with open("requirements.txt", "r") as f:
 
 
 setup(name='asm',
-      version='0.99.1',
+      version='0.99.2',
       description='allele specific methylation',
       # long_description=readme(),
       classifiers=[
@@ -24,7 +24,7 @@ setup(name='asm',
       author_email='lpantano@iscb.org',
       license='MIT',
       packages=find_packages(),
-      scripts=['scripts/asm.py'],
+      scripts=['scripts/asm-pipeline.py'],
       install_requires=install_requires,
       include_package_data=True,
       zip_safe=False)

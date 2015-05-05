@@ -18,7 +18,7 @@ def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, c
     basename = sample
     if is_directional:
         is_directional = ""
-    cmd = "{bismark} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
+    cmd = "{bismark} --bowtie2 -p {num_cores} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
     out_bam = op.join(workdir, sample + ".bam")
     if not file_exists(out_bam):
         with tx_tmpdir() as tx_dir:
