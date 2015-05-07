@@ -28,6 +28,7 @@ from bcbio.install import _get_data_dir
 from asm.trimming import prepare
 from asm.align import create_bam
 from asm.bissnp import call_variations
+from asm.report import create_report
 
 
 def _update_algorithm(data, resources):
@@ -103,6 +104,10 @@ def detect_positions(data, args):
     data = _update_algorithm(data, resources)
     cluster.send_job(call_variations, data, args, resources)
 
+    resources = {'name': 'report', 'mem': 2, 'cores': 5}
+    data = _update_algorithm(data, resources)
+    cluster.send_job(create_report, data, args, resources)
+
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
     parser = arguments.myargs(parser)
@@ -112,7 +117,7 @@ if __name__ == "__main__":
     parser.add_argument("--is_rrbs", action="store_true", help="RRBS data.")
     parser.add_argument("--is_directional", action="store_true", help="is directional sequencing.")
     parser.add_argument("--snp", help="SNPdb database.")
-    parser.add_argument("--galaxy", help="bcbio galaxy resources.")
+    # parser.add_argument("--galaxy", help="bcbio galaxy resources.")
 
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
