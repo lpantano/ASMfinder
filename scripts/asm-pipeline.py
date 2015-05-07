@@ -36,7 +36,7 @@ def _update_algorithm(data, resources):
     """
     new_data = []
     for sample in data:
-        sample['config']['algorithm'] = resources
+        sample[0]['config']['algorithm'] = resources
         new_data.append(sample)
     return new_data
 
@@ -44,7 +44,10 @@ def _prepare_samples(args):
     """
     create dict for each sample having all information
     """
-    system_config = os.path.join(_get_data_dir(), "galaxy", "bcbio_system.yaml")
+    if args.galaxy:
+        system_config = args.galaxy
+    else:
+        system_config = os.path.join(_get_data_dir(), "galaxy", "bcbio_system.yaml")
     config = yaml.load(open(system_config))
     config['algorithm'] = {}
     data = []
@@ -53,7 +56,7 @@ def _prepare_samples(args):
         dt['name'] = splitext_plus(op.basename(sample))[0]
         dt['config'] = config
         dt['fastq'] = op.abspath(sample)
-        data.append(dt)
+        data.append([dt])
     return data
 
 def select_regions(args):
@@ -92,11 +95,11 @@ def detect_positions(data, args):
     data = _update_algorithm(data, resources)
     cluster.send_job(prepare, data, args, resources)
 
-    resources = {'name': 'align', 'mem': 16, 'cores': 8}
+    resources = {'name': 'align', 'mem': 2, 'cores': 8}
     data = _update_algorithm(data, resources)
     cluster.send_job(create_bam, data, args, resources)
 
-    resources = {'name': 'bissnp', 'mem': 24, 'cores': 8}
+    resources = {'name': 'bissnp', 'mem': 3, 'cores': 8}
     data = _update_algorithm(data, resources)
     cluster.send_job(call_variations, data, args, resources)
 
@@ -109,6 +112,7 @@ if __name__ == "__main__":
     parser.add_argument("--is_rrbs", action="store_true", help="RRBS data.")
     parser.add_argument("--is_directional", action="store_true", help="is directional sequencing.")
     parser.add_argument("--snp", help="SNPdb database.")
+    parser.add_argument("--galaxy", help="bcbio galaxy resources.")
 
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
