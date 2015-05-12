@@ -91,3 +91,4 @@ def call_variations(data, args):
     counts_file = _count_covars(data['final_bam'], sample, workdir, args.snp, args.reference, data['config'])
     recal_bam = _recal_BQ_score(data['final_bam'], sample, workdir, counts_file, args.reference, data['config'])
     cpg, snp = _call_vcf(recal_bam, sample, workdir, args.reference, data['config'])
+    return data

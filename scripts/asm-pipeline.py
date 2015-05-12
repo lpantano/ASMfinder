@@ -64,6 +64,8 @@ def select_regions(args):
     """
     select regions and create coverage plots
     """
+    assert args.files, "Need a set of fastq files"
+    assert args.out, "Need --out"
     region = os.path.abspath(args.region)
     workdir = 'select'
     safe_makedir(workdir)
@@ -94,19 +96,19 @@ def detect_positions(data, args):
 
     resources = {'name': 'trimming', 'mem': 4, 'cores': 1}
     data = _update_algorithm(data, resources)
-    cluster.send_job(prepare, data, args, resources)
+    data = cluster.send_job(prepare, data, args, resources)
 
     resources = {'name': 'align', 'mem': 2, 'cores': 8}
     data = _update_algorithm(data, resources)
-    cluster.send_job(create_bam, data, args, resources)
+    data = cluster.send_job(create_bam, data, args, resources)
 
     resources = {'name': 'bissnp', 'mem': 3, 'cores': 8}
     data = _update_algorithm(data, resources)
-    cluster.send_job(call_variations, data, args, resources)
+    data = cluster.send_job(call_variations, data, args, resources)
 
     resources = {'name': 'report', 'mem': 2, 'cores': 5}
     data = _update_algorithm(data, resources)
-    cluster.send_job(create_report, data, args, resources)
+    data = cluster.send_job(create_report, data, args, resources)
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
