@@ -6,10 +6,7 @@ class Bismark < Formula
   sha256 "19560979bf3d060dd48079696b595cedd5bd4e8685da95a5024365e071cee58b"
 
   def install
-    chmod 0755, "bismark"
-    prefix.install Dir["*"]
-    mkdir_p bin
-    ln_s prefix/"bismark", bin/"bismark"
+    bin.install Dir["bismark*"]
   end
 
   test do

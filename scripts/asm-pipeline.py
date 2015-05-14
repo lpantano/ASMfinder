@@ -65,6 +65,8 @@ def select_regions(args):
     """
     select regions and create coverage plots
     """
+    assert args.files, "Need a set of fastq files"
+    assert args.out, "Need --out"
     region = os.path.abspath(args.region)
     workdir = 'select'
     safe_makedir(workdir)
@@ -124,7 +126,6 @@ def link_sites(args):
         sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0]
         out_file = op.join(workdir, sample + "_pairs.tsv")
         cpg_het_pairs(in_vcf, snp_file, out_file, workdir)
-
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
