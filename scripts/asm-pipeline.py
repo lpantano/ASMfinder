@@ -29,6 +29,7 @@ from asm.trimming import prepare
 from asm.align import create_bam
 from asm.bissnp import call_variations
 from asm.report import create_report
+from asm.select import get_het, is_good_cpg, cpg_het_pairs
 
 
 def _update_algorithm(data, resources):
@@ -67,13 +68,16 @@ def select_regions(args):
     region = os.path.abspath(args.region)
     workdir = 'select'
     safe_makedir(workdir)
-    out_file = os.path.join(workdir, args.out)
+    out_file = os.path.join(workdir, splitext_plus(args.out)[0] + "_cpg.bed")
+    out_snp_file = os.path.join(workdir, splitext_plus(args.out)[0] + '_snp.bed')
     if not file_exists(out_file):
         with file_transaction(out_file) as tx_out:
             with open(tx_out, 'w') as out_handle:
-                print >> out_handle, "chrom\tstart\tend\tcu\tcm\tstrand\tgene\tsample"
+                # print >> out_handle, "chrom\tstart\tend\tcu\tcm\tstrand\tgene\tsample"
                 for in_vcf in args.files:
+                    snp_file = in_vcf.replace("rawcpg", "rawsnp")
                     sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0]
+                    get_het(snp_file, region, sample, out_snp_file)
                     res = pybedtools.BedTool(in_vcf).intersect(b=region, wo=True)
                     # cmd = ("bedtools intersect -u -a {in_vcf} -b {region} > {tx_tmp}")
                     # do.run(cmd.format(**locals()), "selecting %s" % in_vcf)
@@ -83,8 +87,10 @@ def select_regions(args):
                         chrom, pos, info, header, frmt = record[0], int(record[1]), record[7], record[8], record[9]
                         cs = info.split(';')[0].split('=')[1]
                         frmt = dict(zip(header.split(":"), frmt.split(':')))
-                        if int(frmt['CU']) > 10 and int(frmt['CM']) > 10:
-                            print >> out_handle, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s" % (chrom, pos, pos + 1, frmt['CU'], frmt['CM'], cs, gene, sample)
+                        if is_good_cpg(frmt):
+                            tag = "%s-%s-%s-%s" % (frmt['CU'], frmt['CM'], gene, sample)
+                            print >> out_handle, "%s\t%s\t%s\t%s\t.\t%s" % (chrom, pos, pos + 1, tag, cs)
+
 
 def detect_positions(data, args):
     assert args.reference, "Need --reference"
@@ -94,19 +100,31 @@ def detect_positions(data, args):
 
     resources = {'name': 'trimming', 'mem': 4, 'cores': 1}
     data = _update_algorithm(data, resources)
-    cluster.send_job(prepare, data, args, resources)
+    data = cluster.send_job(prepare, data, args, resources)
 
     resources = {'name': 'align', 'mem': 2, 'cores': 8}
     data = _update_algorithm(data, resources)
-    cluster.send_job(create_bam, data, args, resources)
+    data = cluster.send_job(create_bam, data, args, resources)
 
     resources = {'name': 'bissnp', 'mem': 3, 'cores': 8}
     data = _update_algorithm(data, resources)
-    cluster.send_job(call_variations, data, args, resources)
+    data = cluster.send_job(call_variations, data, args, resources)
 
     resources = {'name': 'report', 'mem': 2, 'cores': 5}
     data = _update_algorithm(data, resources)
-    cluster.send_job(create_report, data, args, resources)
+    data = cluster.send_job(create_report, data, args, resources)
+
+
+def link_sites(args):
+    assert args.files, "Need a set of fastq files"
+    workdir = 'link'
+    workdir = op.abspath(safe_makedir(workdir))
+    for in_vcf in args.files:
+        snp_file = in_vcf.replace("rawcpg", "rawsnp")
+        sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0]
+        out_file = op.join(workdir, sample + "_pairs.tsv")
+        cpg_het_pairs(in_vcf, snp_file, out_file, workdir)
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
@@ -121,7 +139,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
-    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection'])
+    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection', 'link'])
     parser.add_argument("--n_sample", default=1000, help="sample bed files with this number of lines")
     parser.add_argument("--seed", help="replication of sampling")
     args = parser.parse_args()
@@ -131,3 +149,5 @@ if __name__ == "__main__":
     if args.run == "detection":
         data = _prepare_samples(args)
         detect_positions(data, args)
+    if args.run == 'link':
+        link_sites(args)
