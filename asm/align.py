@@ -1,13 +1,15 @@
 import os
+import shutil
 import os.path as op
+
 # from collections import Counter
 from bcbio.utils import splitext_plus, file_exists, safe_makedir, chdir
 from bcbio.provenance import do
 from bcbio.distributed.transaction import file_transaction, tx_tmpdir
 from bcbio import broad
 from bcbio.bam import index
-import shutil
 
+from ichwrapper import log
 
 def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, config):
     """
@@ -25,7 +27,9 @@ def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, c
     with chdir(workdir):
         if not file_exists(out_bam):
             with tx_tmpdir() as tx_dir:
-                do.run(cmd.format(**locals()), "bismark in %s" % in_fastq)
+                cmd = cmd.format(**locals())
+                log.logger.debug(cmd)
+                do.run(cmd, "bismark in %s" % in_fastq)
                 shutil.move(tx_dir, out_dir)
 
         broad_runner = broad.runner_from_config(config)

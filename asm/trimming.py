@@ -1,8 +1,10 @@
 import os.path as op
 from bcbio.utils import splitext_plus, file_exists, safe_makedir, chdir
-from bcbio.provenance import do
+# from bcbio.provenance import do
 from bcbio.provenance.do import find_cmd
 from bcbio.distributed.transaction import file_transaction, tx_tmpdir
+from ichwrapper.log import run
+from ichwrapper.log import logger
 import shutil
 
 
@@ -21,7 +23,8 @@ def _trimming(in_fastq, out_dir, sample, is_rrbs, is_directional):
     with chdir(out_dir):
         if not file_exists(trimming):
             with tx_tmpdir() as tx_dir:
-                do.run(cmd.format(**locals()), "trim_galore in %s" % in_fastq)
+                logger.debug(cmd.format(**locals()))
+                run(cmd.format(**locals()), "trim_galore in %s" % in_fastq)
                 shutil.move(tx_dir, op.join(out_dir, sample))
     assert op.exists(trimming), "trimming file doesn't exists:%s" % trimming
     return trimming
