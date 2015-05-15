@@ -11,9 +11,11 @@ from bcbio.utils import append_stem
 
 
 def is_good_cpg(frmt, record):
+    alt_depth = sum(map(int, frmt['DP4'].split(','))[2:])
+    ref_depth = sum(map(int, frmt['DP4'].split(','))[:2])
     if record[6] != "PASS":
         return False
-    if int(frmt['CU']) > 3 and int(frmt['CM']) > 3:
+    if int(ref_depth) > 3 and int(alt_depth) > 3:
         return True
 
 
@@ -25,12 +27,13 @@ def _genotype(alleles):
 
 
 def is_good_het(frmt, record):
-    depth = sum(map(int, frmt['DP4'].split(','))[1:])
-    if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3 and depth > 3 and record[6] == "PASS":
+    depth = sum(map(int, frmt['DP4'].split(','))[2:])
+    # if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3 and depth > 3 and record[6] == "PASS":
+    if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3:
         return True
 
 
-def cpg_het_pairs(cpgvcf, snpvcf, out_file, workdir):
+def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     """
     Detect het close to hemi-met sites
     """
@@ -63,6 +66,9 @@ def cpg_het_pairs(cpgvcf, snpvcf, out_file, workdir):
     with open(out_file, 'w') as out_handle:
         for record in res:
             if record[1] != record[11]:
+                if record[1] == "19889634":
+                    print "do"
+                    _make_linkage(bam_file, record[0], int(record[1]), int(record[11]))
                 print >>out_handle, record
 
 
