@@ -13,8 +13,9 @@ from bcbio.utils import append_stem
 def is_good_cpg(frmt, record):
     if record[6] != "PASS":
         return False
-    if int(frmt['CU']) > 10 and int(frmt['CM']) > 10:
+    if int(frmt['CU']) > 3 and int(frmt['CM']) > 3:
         return True
+
 
 def _genotype(alleles):
     if alleles[0] == alleles[1]:
@@ -25,7 +26,7 @@ def _genotype(alleles):
 
 def is_good_het(frmt, record):
     depth = sum(map(int, frmt['DP4'].split(','))[1:])
-    if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 10 and depth > 10 and record[6] == "PASS":
+    if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3 and depth > 3 and record[6] == "PASS":
         return True
 
 
