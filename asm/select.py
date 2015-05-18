@@ -33,6 +33,10 @@ def is_good_het(frmt, record):
         return True
 
 
+def _get_strand(record):
+    return record[7].split(";")[0].split("=")[1]
+
+
 def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     """
     Detect het close to hemi-met sites
@@ -66,38 +70,59 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     with open(out_file, 'w') as out_handle:
         for record in res:
             if record[1] != record[11]:
-                if record[1] == "19889634":
-                    print "do"
-                    _make_linkage(bam_file, record[0], int(record[1]), int(record[11]))
-                print >>out_handle, record
+                # if record[1] == "19889634":
+                link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
+                res = "%s %s %s %s %s/%s %s %s" % (record[0], record[1], record[3], record[11], record[13], record[14], link, link_as)
+                if len(link) > 1:
+                    print >>out_handle, res
+                    # print >>out_handle, '\n'.join(align)
 
 
-def _make_linkage(bam_file, chrom, cpg, snp):
-    pairs = defaultdict(dict)
-    pairs = _pairs_matrix(bam_file, [chrom, cpg-1, cpg], pairs, 'cpg')
-    pairs = _pairs_matrix(bam_file, [chrom, snp-1, snp], pairs, 'snp')
+def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
+    start, end = [cpg-1, snp] if cpg-1 < snp else [snp, cpg-1]
+    pairs = _pairs_matrix(bam_file, [chrom, start, end], cpg-1, snp-1)
     link = Counter()
+    link_as = Counter()
+    align = []
     for pair in pairs:
-        print pair
-        print pairs[pair]
-        if len(pairs[pair].keys()) > 1:
-            link["/".join(pairs[pair].values())] += 1
-    print link
+        # print pair
+        # print pairs[pair]
+        # print strand
+        if len(pairs[pair].keys()) == 1:
+            continue
+        nts = [pairs[pair]['snp'].split(":")[0], pairs[pair]['cpg'].split(":")[0]]
+        align.append("-".join(nts) if cpg < snp else "-".join(nts[::-1]))
+        info_snp = pairs[pair]['snp'].split(":")
+        if info_snp[1] == cpg_st:
+            # print pairs[pair]
+            if pairs[pair]['cpg']:
+                info_cpg = pairs[pair]['cpg'].split(":")
+                if info_cpg[1] == cpg_st:
+                    link["v%s/c%s(%s)" % (info_snp[0], info_cpg[0], cpg_st)] += 1
+        else:
+            link_as["v%s(%s)" % (info_snp[0], cpg_st)] += 1
+    # print link
+    return link, link_as, align
 
 
-def _pairs_matrix(bam_file, region, pileup, tag):
+def _pairs_matrix(bam_file, region, cpg, snp):
     """
     Get reads from the cpg region and pairs
     cpg nt with snp nt
     """
+    pileup = defaultdict(dict)
     c, s, e = region
     samfile = pysam.AlignmentFile(bam_file, "rb")
     for pileupcolumn in samfile.pileup(c, s, e):
-        if pileupcolumn.pos == s:
+        if pileupcolumn.pos == cpg or pileupcolumn.pos == snp:
             # print ("\ncoverage at base %s = %s" % (pileupcolumn.pos, pileupcolumn.n))
             for pileupread in pileupcolumn.pileups:
                 if not pileupread.is_del and not pileupread.is_refskip:  # query position is None if is_del or is_refskip is set.
-                    pileup[pileupread.alignment.query_name].update({tag: pileupread.alignment.query_sequence[pileupread.query_position]})
+                    strand = "-" if pileupread.alignment.is_reverse else "+"
+                    tag = "cpg" if pileupcolumn.pos == cpg else "snp"
+                    nt = pileupread.alignment.query_sequence[pileupread.query_position]
+                    nt = nt.lower() if strand == "-" else nt
+                    pileup[pileupread.alignment.query_name].update({tag: nt + ":%s" % strand})
 
     return pileup
 
