@@ -7,7 +7,7 @@ import pybedtools
 import pysam
 
 from bcbio.distributed.transaction import file_transaction
-from bcbio.utils import append_stem
+from bcbio.utils import append_stem, file_exists
 
 
 def is_good_cpg(frmt, record):
@@ -36,6 +36,27 @@ def is_good_het(frmt, record):
 def _get_strand(record):
     return record[7].split(";")[0].split("=")[1]
 
+def _snp_veracity(sense, anti):
+    """
+    Only if SNPs is detected in both strand with two alleles
+    """
+    gen_plus = sense.keys()
+    gen_minus = anti.keys()
+    allels1 = [g.split(":")[0].split("/")[0] for g in gen_plus]
+    allels2 = [g.split(":")[0] for g in gen_minus]
+    if len(allels1) == len(allels2):
+        return True
+
+def _valid(link, link_as):
+    """
+    Only if one snp allele is associated with the Cu/Cm
+    """
+    if len(link) == 2:
+        gen = link.keys()
+        allels1 = gen[0].split(":")[0].split("/")
+        allels2 = gen[1].split(":")[0].split("/")
+        if allels1[0] != allels2[0] and allels1[1] != allels2[1] and _snp_veracity(link, link_as):
+            return True
 
 def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     """
@@ -44,28 +65,29 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     cpg_filter = op.join(workdir, op.basename(append_stem(cpgvcf, "_filtered")))
     snp_filter = op.join(workdir, op.basename(append_stem(snpvcf, "_filtered")))
 
-    with open(cpg_filter, 'w') as out_handle:
-        with open(cpgvcf) as in_handle:
-            for line in in_handle:
-                if line.startswith("#"):
-                    continue
-                record = line.strip().split("\t")
-                # print record
-                header, frmt = record[8], record[9]
-                frmt = dict(zip(header.split(":"), frmt.split(':')))
-                if is_good_cpg(frmt, record):
-                    print >>out_handle, line
-
-    with open(snp_filter, 'w') as out_handle:
-        with open(snpvcf) as in_handle:
-            for line in in_handle:
-                if line.startswith("#"):
-                    continue
-                record = line.strip().split("\t")
-                header, frmt = record[8], record[9]
-                frmt = dict(zip(header.split(":"), frmt.split(':')))
-                if is_good_het(frmt, record):
-                    print >>out_handle, line
+    if not file_exists(cpg_filter):
+        with open(cpg_filter, 'w') as out_handle:
+            with open(cpgvcf) as in_handle:
+                for line in in_handle:
+                    if line.startswith("#"):
+                        continue
+                    record = line.strip().split("\t")
+                    # print record
+                    header, frmt = record[8], record[9]
+                    frmt = dict(zip(header.split(":"), frmt.split(':')))
+                    if is_good_cpg(frmt, record):
+                        print >>out_handle, line
+    if not file_exists(snp_filter):
+        with open(snp_filter, 'w') as out_handle:
+            with open(snpvcf) as in_handle:
+                for line in in_handle:
+                    if line.startswith("#"):
+                        continue
+                    record = line.strip().split("\t")
+                    header, frmt = record[8], record[9]
+                    frmt = dict(zip(header.split(":"), frmt.split(':')))
+                    if is_good_het(frmt, record):
+                        print >>out_handle, line
     res = pybedtools.BedTool(cpg_filter).window(snp_filter, w=75)
     with open(out_file, 'w') as out_handle:
         for record in res:
@@ -73,9 +95,39 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
                 # if record[1] == "19889634":
                 link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
                 res = "%s %s %s %s %s/%s %s %s" % (record[0], record[1], record[3], record[11], record[13], record[14], link, link_as)
-                if len(link) > 1:
+                if _valid(link, link_as):
                     print >>out_handle, res
                     # print >>out_handle, '\n'.join(align)
+
+def _complement(nt):
+    if nt == 'a':
+        return 't'
+    elif nt == 't':
+        return 'a'
+    elif nt == 'c':
+        return 'g'
+    elif nt == 'g':
+        return 'c'
+
+def _model(pileup, snp, cpg_st):
+    c_pos = v_pos = []
+    for read in pileup:
+        if len(pileup[read].keys()) == 1:
+            continue
+        info_snp = pileup[read]['snp'].split(":")
+        info_cpg = pileup[read]['cpg'].split(":")
+        if info_cpg[1] == cpg_st:
+            if cpg_st == "+":
+                c_pos.append(info_cpg[0].lower())
+                v_pos.append(info_snp[0].lower())
+            else:
+                c_pos.append(_complement(info_cpg[0].lower()))
+                v_pos.append(_complement(info_snp[0].lower()))
+        else:
+            if info_snp[1] == "+":
+                v_pos.append(info_snp[0].lower())
+            else:
+                v_pos.append(_complement(info_snp[0].lower()))
 
 
 def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
@@ -98,9 +150,9 @@ def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
             if pairs[pair]['cpg']:
                 info_cpg = pairs[pair]['cpg'].split(":")
                 if info_cpg[1] == cpg_st:
-                    link["v%s/c%s(%s)" % (info_snp[0], info_cpg[0], cpg_st)] += 1
+                    link["v%s/c%s:%s" % (info_snp[0], info_cpg[0], cpg_st)] += 1
         else:
-            link_as["v%s(%s)" % (info_snp[0], cpg_st)] += 1
+            link_as["v%s:%s" % (info_snp[0], info_snp[1])] += 1
     # print link
     return link, link_as, align
 
