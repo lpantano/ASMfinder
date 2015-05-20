@@ -94,7 +94,7 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
             if record[1] != record[11]:
                 # if record[1] == "19889634":
                 link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
-                res = "%s %s %s %s %s/%s %s %s" % (record[0], record[1], record[3], record[11], record[13], record[14], link, link_as)
+                res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], str(link), str(link_as))
                 if _valid(link, link_as):
                     print >>out_handle, res
                     # print >>out_handle, '\n'.join(align)

@@ -20,6 +20,8 @@ def _trimming(in_fastq, out_dir, sample, is_rrbs, is_directional):
 
     cmd = "{trim_galore} {is_rrbs} {is_directional} --length 30 --quality 30 {in_fastq} -o {tx_dir}"
     trimming = op.join(out_dir, sample, sample + "_trimmed.fq")
+    if in_fastq.endswith("gz"):
+        trimming += ".gz"
     with chdir(out_dir):
         if not file_exists(trimming):
             with tx_tmpdir() as tx_dir:

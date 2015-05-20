@@ -117,15 +117,33 @@ def detect_positions(data, args):
     data = cluster.send_job(create_report, data, args, resources)
 
 
+def _find_bam(bam_files, sample):
+    """
+    Find the most similar file name
+    """
+    score = 0
+    candidate = None
+    for fn in bam_files:
+        sc = sum(a == b for a, b in zip(op.basename(sample), op.basename(fn)))
+        if sc > score:
+            score = sc
+            candidate = fn
+    return candidate
+
+
 def link_sites(args):
     assert args.files, "Need a set of fastq files"
     workdir = 'link'
     workdir = op.abspath(safe_makedir(workdir))
-    for in_vcf in args.files:
+    vcf_files = [fn for fn in args.files if fn.endswith('vcf')]
+    bam_files = [fn for fn in args.files if fn.endswith('bam')]
+    for in_vcf in vcf_files:
         snp_file = in_vcf.replace("rawcpg", "rawsnp")
-        sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0]
+        sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0].replace(".rawcpg", "")
+        bam_file = _find_bam(bam_files, sample)
+        assert bam_file, "No bam file associated to vcf %s" % in_vcf
         out_file = op.join(workdir, sample + "_pairs.tsv")
-        cpg_het_pairs(in_vcf, snp_file, out_file, workdir)
+        cpg_het_pairs(in_vcf, snp_file, bam_file, out_file, workdir)
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
