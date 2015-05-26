@@ -2,12 +2,18 @@
 Functions to spot hemy regions
 """
 import os.path as op
+import datetime
 from collections import defaultdict, Counter
+from tabulate import tabulate
+
 import pybedtools
 import pysam
+import vcf
 
 from bcbio.distributed.transaction import file_transaction
-from bcbio.utils import append_stem, file_exists
+from bcbio.provenance import do
+from bcbio.utils import append_stem, file_exists, splitext_plus
+from bcbio.variation.vcfutils import bgzip_and_index
 
 
 def is_good_cpg(frmt, record):
@@ -18,20 +24,17 @@ def is_good_cpg(frmt, record):
     if int(ref_depth) > 3 and int(alt_depth) > 3:
         return True
 
-
 def _genotype(alleles):
     if alleles[0] == alleles[1]:
         return "homoz"
     else:
         return "heteroz"
 
-
 def is_good_het(frmt, record):
     depth = sum(map(int, frmt['DP4'].split(','))[2:])
     # if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3 and depth > 3 and record[6] == "PASS":
     if _genotype(frmt['GT'].split("/")) == "heteroz" and int(frmt['DP']) > 3:
         return True
-
 
 def _get_strand(record):
     return record[7].split(";")[0].split("=")[1]
@@ -58,10 +61,115 @@ def _valid(link, link_as):
         if allels1[0] != allels2[0] and allels1[1] != allels2[1] and _snp_veracity(link, link_as):
             return True
 
+def _format(link):
+    """
+    Give nice format to dict with alleles and reads supporting
+    """
+    cell = ''
+    for allele in link:
+        cell += "%s=%s;" % (allele, link[allele])
+    return cell
+
+def _change_to_cpg(line, tag):
+    return line.replace(tag, "CpG%s" % tag).strip()
+
+def _change_to_snp(line, tag):
+    return line.replace(tag, "SNP%s" % tag).strip()
+
+def _create_vcf_header(vcf_file, out_handle):
+    """
+    Create header for final vcf
+    """
+    print >>out_handle, "##fileformat=VCFv4.1"
+    print >>out_handle, "##fileData=%s" % datetime.date.today().strftime('%y%m%d')
+    with open(vcf_file) as in_handle:
+        for line in in_handle:
+            if line.startswith("##reference"):
+                print >>out_handle, line.strip()
+            if line.startswith("##contig"):
+                print >>out_handle, line.strip()
+            if line.startswith("#CHROM"):
+                print >>out_handle, line.strip()
+            if line.startswith("##BisSNP"):
+                print >>out_handle, line.strip()
+            if line.startswith("##FILTER"):
+                print >>out_handle, line.strip()
+            if line.startswith("##FORMAT=<ID=GT"):
+                print >>out_handle, line.strip()
+            if line.startswith("##INFO=<ID=DP"):
+                print >>out_handle, line.strip()
+            if line.startswith("##FORMAT=<ID=BRC6"):
+                print >>out_handle, _change_to_cpg(line, 'BRC6')
+                print >>out_handle, _change_to_snp(line, 'BRC6')
+            if line.startswith("##FORMAT=<ID=CM"):
+                print >>out_handle, _change_to_cpg(line, 'CM')
+                print >>out_handle, _change_to_snp(line, 'CM')
+            if line.startswith("##FORMAT=<ID=CU"):
+                print >>out_handle, _change_to_cpg(line, 'CU')
+                print >>out_handle, _change_to_snp(line, 'CU')
+            if line.startswith("##FORMAT=<ID=CP"):
+                print >>out_handle, _change_to_cpg(line, 'CP')
+                print >>out_handle, _change_to_snp(line, 'CP')
+            if line.startswith("##FORMAT=<ID=DP"):
+                print >>out_handle, _change_to_cpg(line, 'DP')
+                print >>out_handle, _change_to_snp(line, 'DP')
+            if line.startswith("##INFO=<ID=CS"):
+                print >>out_handle, line.strip()
+
+def _get_info(info, tag):
+    """
+    get value from info vcf field
+    """
+    return next((value.split("=")[1] for value in info.split(";") if value.startswith(tag)), None)
+
+def _get_format(header, frmt):
+    """
+    get format field in dict instance
+    """
+    frmt = dict(zip(header.split(":"), frmt.split(':')))
+    return frmt
+
+def _format_vcf_value(frmt1, frmt2, tag):
+    return {_change_to_cpg(tag, tag): frmt1[tag],
+            _change_to_snp(tag, tag): frmt2[tag]}
+
+def _get_vcf_line(record):
+    """
+    create new vcf file with CpG and SNP information
+    """
+    frmt = {}
+    cs = _get_info(record[7], "CS")
+    ref = "%s%s" % ("C", record[13])
+    alt = "%s%s" % ("C", record[14])
+    qual = (float(record[5]) + float(record[15])) / 2
+    filter = "LowQual"
+    dp = int(_get_info(record[7], "DP")) + int(_get_info(record[17], "DP"))
+    info = ";".join(["DP=%s" % dp, "CS=%s" % cs])
+    cpg = _get_format(record[8], record[9])
+    snp = _get_format(record[18], record[19])
+    for value in ["BRC6", "CM", "CU", "CP", "DP"]:
+        frmt.update(_format_vcf_value(cpg, snp, value))
+    format = "GT:" + ":".join(frmt.keys())
+    sample = snp["GT"] + ":" + ":".join(frmt.values())
+    return record[0], record[11], ref, alt, qual, filter, info, format, sample
+
+def _correct_vcf(vcf_file):
+    """
+    sort by genome/position, bgzip and index
+    """
+    vcf_sort = append_stem(vcf_file, "_sort") + ".gz"
+    if not file_exists(vcf_sort):
+        with file_transaction(vcf_sort) as tx_out:
+            cmd = "vcf-sort {vcf_file} | bgzip  > {tx_out}"
+            do.run(cmd.format(**locals()), "sort %s" % vcf_file)
+            do.run("tabix -f {0}".format(tx_out), "")
+    return vcf_sort
+
 def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
     """
     Detect het close to hemi-met sites
     """
+    out_vcf = splitext_plus(out_file)[0] + ".vcf"
     cpg_filter = op.join(workdir, op.basename(append_stem(cpgvcf, "_filtered")))
     snp_filter = op.join(workdir, op.basename(append_stem(snpvcf, "_filtered")))
 
@@ -89,15 +197,25 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
                     if is_good_het(frmt, record):
                         print >>out_handle, line
     res = pybedtools.BedTool(cpg_filter).window(snp_filter, w=75)
-    with open(out_file, 'w') as out_handle:
-        for record in res:
-            if record[1] != record[11]:
-                # if record[1] == "19889634":
-                link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
-                res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], str(link), str(link_as))
-                if _valid(link, link_as):
-                    print >>out_handle, res
-                    # print >>out_handle, '\n'.join(align)
+
+    if not file_exists(out_vcf):
+        with open(out_file, 'w') as out_handle, open(out_vcf, 'w') as vcf_handle:
+            _create_vcf_header(cpgvcf, vcf_handle)
+            print >>out_handle, "chrom\tCpG_pos\tCpG_nt\tSNP_pos\tAlleles\tassociation_plus\tSNP_reads_minus"
+            for record in res:
+                if record[1] != record[11]:
+                    # if record[1] == "19889634":
+                    link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
+                    res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], _format(link), _format(link_as))
+                    chrom, pos, ref, alt, qual, filt, info, frmt, sample = _get_vcf_line(record)
+                    if _valid(link, link_as):
+                        filt = "PASS"
+                        print >>out_handle, res
+                        # print >>out_handle, '\n'.join(align)
+
+                    vcf_res = "{chrom}\t{pos}\t.\t{ref}\t{alt}\t{qual}\t{filt}\t{info}\t{frmt}\t{sample}".format(**locals())
+                    print >>vcf_handle, vcf_res
+    return _correct_vcf(out_vcf)
 
 def _complement(nt):
     if nt == 'a':
@@ -128,7 +246,6 @@ def _model(pileup, snp, cpg_st):
                 v_pos.append(info_snp[0].lower())
             else:
                 v_pos.append(_complement(info_snp[0].lower()))
-
 
 def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
     start, end = [cpg-1, snp] if cpg-1 < snp else [snp, cpg-1]
@@ -196,3 +313,20 @@ def get_het(in_vcf, region, sample, out_file):
                     print >> out_handle, "%s\t%s\t%s\t%s\t.\t+" % (chrom, pos, pos + 1, tag )
 
 
+
+def post_processing(vcf_res, vcf_merged, out):
+    """
+    merge list of vcf files and get stats
+    """
+    if not file_exists(vcf_merged):
+        cmd = "bcftools merge {0} > {1}".format(" ".join(vcf_res), vcf_merged)
+        do.run(cmd, "merge files")
+
+    vcf_reader = vcf.Reader(open(vcf_merged, 'r'))
+    num_call = Counter()
+    for record in vcf_reader:
+        if not record.FILTER:
+            num_call[record.num_called] += 1
+
+    with open(out + "_stat.tsv", 'w') as stat_handle:
+        print >>stat_handle, tabulate([[k, v] for k, v in num_call.iteritems()], headers=["# samples", "# of SNPs"])

@@ -22,14 +22,11 @@ from bcbio.distributed.transaction import file_transaction
 from bcbio.utils import file_exists, splitext_plus, tmpfile, safe_makedir
 from bcbio.install import _get_data_dir
 
-# from ecov.total import _calc_total_exome_coverage
-# from ecov.bias import calculate_bias_over_multiple_regions
-# from ecov.variants import calc_variants_stats
 from asm.trimming import prepare
 from asm.align import create_bam
 from asm.bissnp import call_variations
 from asm.report import create_report
-from asm.select import get_het, is_good_cpg, cpg_het_pairs
+from asm.select import get_het, is_good_cpg, cpg_het_pairs, post_processing
 
 
 def _update_algorithm(data, resources):
@@ -133,17 +130,21 @@ def _find_bam(bam_files, sample):
 
 def link_sites(args):
     assert args.files, "Need a set of fastq files"
+    assert args.out, "Need prefix"
+    vcf_merged = args.out + ".vcf"
+    vcf_res = []
     workdir = 'link'
     workdir = op.abspath(safe_makedir(workdir))
     vcf_files = [fn for fn in args.files if fn.endswith('vcf')]
     bam_files = [fn for fn in args.files if fn.endswith('bam')]
     for in_vcf in vcf_files:
         snp_file = in_vcf.replace("rawcpg", "rawsnp")
-        sample = splitext_plus(os.path.basename(in_vcf))[0].split("_")[0].replace(".rawcpg", "")
+        sample = splitext_plus(os.path.basename(in_vcf))[0].split(".raw")[0].replace(".rawcpg", "")
         bam_file = _find_bam(bam_files, sample)
         assert bam_file, "No bam file associated to vcf %s" % in_vcf
         out_file = op.join(workdir, sample + "_pairs.tsv")
-        cpg_het_pairs(in_vcf, snp_file, bam_file, out_file, workdir)
+        vcf_res.append(cpg_het_pairs(in_vcf, snp_file, bam_file, out_file, workdir))
+    post_processing(vcf_res, vcf_merged, args.out)
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
