@@ -323,10 +323,19 @@ def post_processing(vcf_res, vcf_merged, out):
         do.run(cmd, "merge files")
 
     vcf_reader = vcf.Reader(open(vcf_merged, 'r'))
+    samples = vcf_reader.samples
     num_call = Counter()
+    num_call_sample = Counter()
     for record in vcf_reader:
         if not record.FILTER:
             num_call[record.num_called] += 1
+            # print record.num_called
+
+            for sample in samples:
+                if record.genotype(sample)['GT']:
+                    # print record.genotype(sample)['GT']
+                    num_call_sample[sample] += 1
 
     with open(out + "_stat.tsv", 'w') as stat_handle:
         print >>stat_handle, tabulate([[k, v] for k, v in num_call.iteritems()], headers=["# samples", "# of SNPs"])
+        print >>stat_handle, tabulate([[k, v] for k, v in num_call_sample.iteritems()], headers=["samples", "# of SNPs"])
