@@ -336,6 +336,7 @@ def post_processing(vcf_res, vcf_merged, out):
                     # print record.genotype(sample)['GT']
                     num_call_sample[sample] += 1
 
-    with open(out + "_stat.tsv", 'w') as stat_handle:
+    with open(out + "_shared_stat.tsv", 'w') as stat_handle:
         print >>stat_handle, tabulate([[k, v] for k, v in num_call.iteritems()], headers=["# samples", "# of SNPs"])
+    with open(out + "_stat.tsv", 'w') as stat_handle:
         print >>stat_handle, tabulate([[k, v] for k, v in num_call_sample.iteritems()], headers=["samples", "# of SNPs"])
