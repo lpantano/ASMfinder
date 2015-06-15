@@ -160,7 +160,7 @@ def _correct_vcf(vcf_file):
     vcf_sort = append_stem(vcf_file, "_sort") + ".gz"
     if not file_exists(vcf_sort):
         with file_transaction(vcf_sort) as tx_out:
-            cmd = "vcf-sort {vcf_file} | bgzip  > {tx_out}"
+            cmd = "cat {vcf_file} |vcf-sort | bgzip  > {tx_out}"
             do.run(cmd.format(**locals()), "sort %s" % vcf_file)
             do.run("tabix -f {0}".format(tx_out), "")
     return vcf_sort
@@ -273,7 +273,6 @@ def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
     # print link
     return link, link_as, align
 
-
 def _pairs_matrix(bam_file, region, cpg, snp):
     """
     Get reads from the cpg region and pairs
@@ -295,7 +294,6 @@ def _pairs_matrix(bam_file, region, cpg, snp):
 
     return pileup
 
-
 def get_het(in_vcf, region, sample, out_file):
     res = pybedtools.BedTool(in_vcf).intersect(b=region, wo=True)
     with file_transaction(out_file) as tx_out:
@@ -311,8 +309,6 @@ def get_het(in_vcf, region, sample, out_file):
                 if is_good_het(frmt, record):
                     tag = "%s-%s-%s-%s" % (frmt['GT'], frmt['DP'], gene, sample)
                     print >> out_handle, "%s\t%s\t%s\t%s\t.\t+" % (chrom, pos, pos + 1, tag )
-
-
 
 def post_processing(vcf_res, vcf_merged, out):
     """
