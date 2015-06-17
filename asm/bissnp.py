@@ -77,7 +77,7 @@ def _call_vcf(in_bam, sample, workdir, reference, config):
            "-vfn2 {out_vfn2} "
            "-stand_call_conf 20 "
            "-stand_emit_conf 0 "
-           "-mmq 30 "
+           "-mmq 0 "
            "-mbq 0 "
            "-nt {num_cores}")
     with chdir(workdir):
