@@ -17,6 +17,8 @@ def _trimming(in_fastq, out_dir, sample, is_rrbs, is_directional):
         is_rrbs = "--rrbs"
     if is_directional:
         is_directional = ""
+    else:
+        is_directional = "--non_directional"
 
     cmd = "{trim_galore} {is_rrbs} {is_directional} --length 30 --quality 30 {in_fastq} -o {tx_dir}"
     trimming = op.join(out_dir, sample, sample + "_trimmed.fq")
