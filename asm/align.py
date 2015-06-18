@@ -20,6 +20,8 @@ def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, c
     basename = sample
     if is_directional:
         is_directional = ""
+    else:
+        is_directional = "--non_directional"
     cmd = "{bismark} --bowtie2 -p {num_cores} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
     out_dir = op.join(workdir, sample)
     out_bam = op.join(out_dir, sample + ".bam")
