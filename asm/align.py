@@ -11,18 +11,21 @@ from bcbio.bam import index
 
 from ichwrapper import log
 
-def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, config):
+def _align(in_fastq, sample, workdir, genome_index, is_directional, bowtie2, reference, config):
     """
     align with bismark
     """
     bismark = do.find_cmd("bismark")
-    num_cores = int(config['algorithm'].get('cores', 1) / 2)
+    num_cores = max(int(config['algorithm'].get('cores', 1) / 2), 1)
     basename = sample
     if is_directional:
         is_directional = ""
     else:
         is_directional = "--non_directional"
-    cmd = "{bismark} --bowtie2 -p {num_cores} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
+
+    cmd = "{bismark} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
+    if bowtie2:
+        cmd = "{bismark} --bowtie2 -p {num_cores} -n 1 -o {tx_dir} --basename {sample} --unmapped {is_directional} {genome_index} {in_fastq}"
     out_dir = op.join(workdir, sample)
     out_bam = op.join(out_dir, sample + ".bam")
 
@@ -51,5 +54,5 @@ def create_bam(data, args):
     workdir = safe_makedir("align")
     sample = data['name']
     # workdir = op.join("align", sample)
-    data['final_bam'] = _align(data['trimmed'], sample, op.abspath(workdir), args.index, args.is_directional, args.reference, data['config'])
+    data['final_bam'] = _align(data['trimmed'], sample, op.abspath(workdir), args.index, args.is_directional, args.bowtie2, args.reference, data['config'])
     return data

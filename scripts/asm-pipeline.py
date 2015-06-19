@@ -154,6 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("--index", help="genome index for bismark.")
     parser.add_argument("--is_rrbs", action="store_true", help="RRBS data.")
     parser.add_argument("--is_directional", action="store_true", help="is directional sequencing.")
+    parser.add_argument("--bowtie2", action="store_true", help="bowtie2 index.")
     parser.add_argument("--snp", help="SNPdb database.")
     # parser.add_argument("--galaxy", help="bcbio galaxy resources.")
 
