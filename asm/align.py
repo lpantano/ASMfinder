@@ -16,7 +16,7 @@ def _align(in_fastq, sample, workdir, genome_index, is_directional, reference, c
     align with bismark
     """
     bismark = do.find_cmd("bismark")
-    num_cores = config['algorithm'].get('cores', 1)
+    num_cores = int(config['algorithm'].get('cores', 1) / 2)
     basename = sample
     if is_directional:
         is_directional = ""
