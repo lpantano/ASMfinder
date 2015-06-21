@@ -2,6 +2,8 @@ import os
 import shutil
 import os.path as op
 
+import pysam
+
 # from collections import Counter
 from bcbio.utils import splitext_plus, file_exists, safe_makedir, chdir
 from bcbio.provenance import do
@@ -10,6 +12,20 @@ from bcbio import broad
 from bcbio.bam import index
 
 from ichwrapper import log
+
+def _set_quality(in_bam):
+    """
+    change all quality to 255
+    """
+    bam = pysam.AlignmentFile(in_bam, "rb")
+    out_file = op.splitext(in_bam)[0] + "_normqual.bam"
+    if file_exists(out_file):
+        return out_file
+    with pysam.AlignmentFile(out_file, "wb", template=bam) as out_handle:
+        for read in bam.fetch():
+            read.mapping_quality = 255
+            out_handle.write(read)
+    return out_file
 
 def _align(in_fastq, sample, workdir, genome_index, is_directional, bowtie2, reference, config):
     """
@@ -43,6 +59,9 @@ def _align(in_fastq, sample, workdir, genome_index, is_directional, bowtie2, ref
         out_fix_bam = broad_runner.run_fn("picard_fix_rgs", out_bam, names)
         order_bam = splitext_plus(out_fix_bam)[0] + "_order.bam"
         broad_runner.run_fn("picard_reorder", out_fix_bam, reference, order_bam)
+        index(order_bam, config)
+        if bowtie2:
+            order_bam = _set_quality(order_bam)
         index(order_bam, config)
     return order_bam
 
