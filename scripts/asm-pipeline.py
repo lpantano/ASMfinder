@@ -133,7 +133,7 @@ def link_sites(args):
     assert args.out, "Need prefix"
     vcf_merged = args.out + ".vcf"
     vcf_res = []
-    workdir = 'link'
+    workdir = args.out
     workdir = op.abspath(safe_makedir(workdir))
     vcf_files = [fn for fn in args.files if fn.endswith('vcf')]
     bam_files = [fn for fn in args.files if fn.endswith('bam')]

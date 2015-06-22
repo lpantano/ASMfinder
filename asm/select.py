@@ -6,6 +6,9 @@ import datetime
 from collections import defaultdict, Counter
 from tabulate import tabulate
 
+from scipy import stats
+import numpy as np
+
 import pybedtools
 import pysam
 import vcf
@@ -49,6 +52,59 @@ def _snp_veracity(sense, anti):
     allels2 = [g.split(":")[0] for g in gen_minus]
     if len(allels1) == len(allels2):
         return True
+
+def _read_pairs(gt):
+    # print "read_pairs %s" % gt
+    gt1 = gt.split(":")[0].split("/")[0]
+    if gt.find("/") > -1:
+        gt2 = gt.split(":")[0].split("/")[1]
+        return (gt1, gt2)
+
+def _get_total(gts, total):
+    return [total[_read_pairs(gts[0][1])[0]], total[_read_pairs(gts[1][1])[0]]]
+
+def _top_gt(gts):
+    total = Counter()
+    first = _read_pairs(gts[0][1])
+    top = None
+    for gt in gts:
+        pair = _read_pairs(gt[1])
+        if pair:
+            if pair[0] != first[0] and pair[1] != first[1]:
+                top = [gts[0], gt]
+            total[pair[0]] += gt[0]
+    if top:
+        total = _get_total(top, total)
+        return top, total
+    return False, False
+
+def _prop(gt):
+    sense_sorted = sorted(zip(gt.values(), gt.keys()), reverse=True)
+    top_2, total = _top_gt(sense_sorted)
+    # print "top_2 %s totla %s" % (top_2, total)
+    if top_2:
+        table = np.array([[top_2[1][0], total[1] - top_2[1][0]], [total[0] - top_2[0][0], top_2[0][0]]])
+        # print stats.fisher_exact(table)
+        if stats.fisher_exact(table)[1] < 0.05:
+            return False
+    return True
+
+def _valid_test(link, link_as):
+    """
+    Only if top2 associated nt are equally represented
+    """
+    # print "link %s %s" % (link, link_as)
+    if len(link) > 1:
+        sense_pval = _prop(link)
+    else:
+        sense_pval = True
+    # if len(link_as) > 1:
+    #     anti_pval = _prop(link_as)
+    # else:
+    #     anti_pval = True
+    if sense_pval:
+        return False
+    return True
 
 def _valid(link, link_as):
     """
@@ -208,9 +264,10 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
                     link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
                     res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], _format(link), _format(link_as))
                     chrom, pos, ref, alt, qual, filt, info, frmt, sample = _get_vcf_line(record)
-                    if _valid(link, link_as):
+                    if _valid_test(link, link_as):
                         filt = "PASS"
                         print >>out_handle, res
+                        # print res
                         # print >>out_handle, '\n'.join(align)
 
                     vcf_res = "{chrom}\t{pos}\t.\t{ref}\t{alt}\t{qual}\t{filt}\t{info}\t{frmt}\t{sample}".format(**locals())
