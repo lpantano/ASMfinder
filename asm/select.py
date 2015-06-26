@@ -15,7 +15,7 @@ import vcf
 
 from bcbio.distributed.transaction import file_transaction
 from bcbio.provenance import do
-from bcbio.utils import append_stem, file_exists, splitext_plus
+from bcbio.utils import append_stem, file_exists, splitext_plus, safe_makedir
 from bcbio.variation.vcfutils import bgzip_and_index
 
 
@@ -42,7 +42,7 @@ def is_good_het(frmt, record):
 def _get_strand(record):
     return record[7].split(";")[0].split("=")[1]
 
-def _snp_veracity(sense, anti):
+def _snp_veracity_both_strand(sense, anti):
     """
     Only if SNPs is detected in both strand with two alleles
     """
@@ -78,33 +78,42 @@ def _top_gt(gts):
         return top, total
     return False, False
 
+def _above_prop(x, s, p=0.8):
+    pvals = []
+    for p in [0.8, 0.9, 1.0]:
+        pvals.append(stats.binom_test(x, s, p))
+    return max(pvals) > 0.70
+
 def _prop(gt):
     sense_sorted = sorted(zip(gt.values(), gt.keys()), reverse=True)
     top_2, total = _top_gt(sense_sorted)
     # print "top_2 %s totla %s" % (top_2, total)
     if top_2:
+        gt2_prop = float(top_2[1][0]) / total[1]
+        gt1_prop = float(top_2[0][0]) / total[0]
         table = np.array([[top_2[1][0], total[1] - top_2[1][0]], [total[0] - top_2[0][0], top_2[0][0]]])
+        print "table\n%s\ntotals %s %s" % (table, gt1_prop, gt2_prop)
         # print stats.fisher_exact(table)
-        if stats.fisher_exact(table)[1] < 0.05:
-            return False
-    return True
+        if stats.fisher_exact(table)[1] < 0.05 and _above_prop(top_2[0][0], total[0]) and _above_prop(top_2[1][0], total[1]):
+            return True
+    return False
 
 def _valid_test(link, link_as):
     """
     Only if top2 associated nt are equally represented
     """
-    # print "link %s %s" % (link, link_as)
+    print "link %s %s" % (link, link_as)
     if len(link) > 1:
         sense_pval = _prop(link)
     else:
-        sense_pval = True
+        sense_pval = False
     # if len(link_as) > 1:
     #     anti_pval = _prop(link_as)
     # else:
     #     anti_pval = True
     if sense_pval:
-        return False
-    return True
+        return True
+    return False
 
 def _valid(link, link_as):
     """
@@ -261,7 +270,7 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
             for record in res:
                 if record[1] != record[11]:
                     # if record[1] == "19889634":
-                    link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record), record[13])
+                    link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record))
                     res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], _format(link), _format(link_as))
                     chrom, pos, ref, alt, qual, filt, info, frmt, sample = _get_vcf_line(record)
                     if _valid_test(link, link_as):
@@ -304,7 +313,7 @@ def _model(pileup, snp, cpg_st):
             else:
                 v_pos.append(_complement(info_snp[0].lower()))
 
-def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
+def _make_linkage(bam_file, chrom, cpg, snp, cpg_st):
     start, end = [cpg-1, snp] if cpg-1 < snp else [snp, cpg-1]
     pairs = _pairs_matrix(bam_file, [chrom, start, end], cpg-1, snp-1)
     link = Counter()
@@ -316,7 +325,7 @@ def _make_linkage(bam_file, chrom, cpg, snp, cpg_st, snp_ref):
         # print strand
         if len(pairs[pair].keys()) == 1:
             continue
-        nts = [pairs[pair]['snp'].split(":")[0], pairs[pair]['cpg'].split(":")[0]]
+        nts = [pairs[pair]['cpg'].split(":")[0], pairs[pair]['snp'].split(":")[0]]
         align.append("-".join(nts) if cpg < snp else "-".join(nts[::-1]))
         info_snp = pairs[pair]['snp'].split(":")
         if info_snp[1] == cpg_st:
@@ -385,7 +394,7 @@ def post_processing(vcf_res, vcf_merged, out):
             # print record.num_called
 
             for sample in samples:
-                if record.genotype(sample)['GT']:
+                if record.genotype(sample)['GT'] != "./.":
                     # print record.genotype(sample)['GT']
                     num_call_sample[sample] += 1
 
@@ -393,3 +402,18 @@ def post_processing(vcf_res, vcf_merged, out):
         print >>stat_handle, tabulate([[k, v] for k, v in num_call.iteritems()], headers=["# samples", "# of SNPs"])
     with open(out + "_stat.tsv", 'w') as stat_handle:
         print >>stat_handle, tabulate([[k, v] for k, v in num_call_sample.iteritems()], headers=["samples", "# of SNPs"])
+
+
+def detect_asm(data, args):
+    vcf_res = []
+    in_vcf = data['fastq']
+    bam_file = data['bam']
+    sample = splitext_plus(op.basename(in_vcf))[0].split(".raw")[0].replace(".rawcpg", "")
+    workdir = op.join(args.out, sample)
+    safe_makedir(workdir)
+    snp_file = in_vcf.replace("rawcpg", "rawsnp")
+    assert bam_file, "No bam file associated to vcf %s" % in_vcf
+    out_file = op.join(workdir, sample + "_pairs.tsv")
+    vcf_res = cpg_het_pairs(in_vcf, snp_file, bam_file, out_file, workdir)
+    data['asm'] = vcf_res
+    return data

@@ -19,6 +19,7 @@ import pybedtools
 
 # from bcbio.provenance import do
 from bcbio.distributed.transaction import file_transaction
+from bcbio.bam.fastq import is_fastq
 from bcbio.utils import file_exists, splitext_plus, tmpfile, safe_makedir
 from bcbio.install import _get_data_dir
 
@@ -26,7 +27,8 @@ from asm.trimming import prepare
 from asm.align import create_bam
 from asm.bissnp import call_variations
 from asm.report import create_report
-from asm.select import get_het, is_good_cpg, cpg_het_pairs, post_processing
+from asm.select import get_het, is_good_cpg, post_processing, detect_asm
+from asm.show import plot
 
 
 def _update_algorithm(data, resources):
@@ -39,6 +41,7 @@ def _update_algorithm(data, resources):
         new_data.append(sample)
     return new_data
 
+
 def _prepare_samples(args):
     """
     create dict for each sample having all information
@@ -50,13 +53,21 @@ def _prepare_samples(args):
     config = yaml.load(open(system_config))
     config['algorithm'] = {}
     data = []
-    for sample in args.files:
+    vcf_files = [fn for fn in args.files if fn.endswith('vcf')]
+    bam_files = [fn for fn in args.files if fn.endswith('bam')]
+    fastq_files = [fn for fn in args.files if is_fastq(fn)]
+    if not fastq_files:
+        fastq_files = vcf_files
+    for sample in fastq_files:
         dt = {}
         dt['name'] = splitext_plus(op.basename(sample))[0]
         dt['config'] = config
         dt['fastq'] = op.abspath(sample)
+        if bam_files:
+            dt['bam'] = _find_bam(bam_files, sample)
         data.append([dt])
     return data
+
 
 def select_regions(args):
     """
@@ -128,23 +139,20 @@ def _find_bam(bam_files, sample):
     return candidate
 
 
-def link_sites(args):
+def link_sites(data, args):
     assert args.files, "Need a set of fastq files"
     assert args.out, "Need prefix"
-    vcf_merged = args.out + ".vcf"
-    vcf_res = []
+
+    resources = {'name': 'link', 'mem': 6, 'cores': 1}
     workdir = args.out
     workdir = op.abspath(safe_makedir(workdir))
-    vcf_files = [fn for fn in args.files if fn.endswith('vcf')]
-    bam_files = [fn for fn in args.files if fn.endswith('bam')]
-    for in_vcf in vcf_files:
-        snp_file = in_vcf.replace("rawcpg", "rawsnp")
-        sample = splitext_plus(os.path.basename(in_vcf))[0].split(".raw")[0].replace(".rawcpg", "")
-        bam_file = _find_bam(bam_files, sample)
-        assert bam_file, "No bam file associated to vcf %s" % in_vcf
-        out_file = op.join(workdir, sample + "_pairs.tsv")
-        vcf_res.append(cpg_het_pairs(in_vcf, snp_file, bam_file, out_file, workdir))
-    post_processing(vcf_res, vcf_merged, args.out)
+    data = _update_algorithm(data, resources)
+    data = cluster.send_job(detect_asm, data, args, resources)
+
+    vcf_res = [sample[0]['asm'] for sample in data]
+    vcf_merged = op.join(workdir, args.out + ".vcf")
+    post_processing(vcf_res, vcf_merged, op.join(workdir, "link"))
+
 
 if __name__ == "__main__":
     parser = ArgumentParser(description="task related to allele methylation specific")
@@ -160,7 +168,7 @@ if __name__ == "__main__":
 
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
-    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection', 'link'])
+    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection', 'link', 'show'])
     parser.add_argument("--n_sample", default=1000, help="sample bed files with this number of lines")
     parser.add_argument("--seed", help="replication of sampling")
     args = parser.parse_args()
@@ -171,4 +179,7 @@ if __name__ == "__main__":
         data = _prepare_samples(args)
         detect_positions(data, args)
     if args.run == 'link':
-        link_sites(args)
+        data = _prepare_samples(args)
+        link_sites(data, args)
+    if args.run == 'show':
+        plot(args.files, args.region)
