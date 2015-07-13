@@ -92,7 +92,7 @@ def _prop(gt):
         gt2_prop = float(top_2[1][0]) / total[1]
         gt1_prop = float(top_2[0][0]) / total[0]
         table = np.array([[top_2[1][0], total[1] - top_2[1][0]], [total[0] - top_2[0][0], top_2[0][0]]])
-        print "table\n%s\ntotals %s %s" % (table, gt1_prop, gt2_prop)
+        # print "table\n%s\ntotals %s %s" % (table, gt1_prop, gt2_prop)
         # print stats.fisher_exact(table)
         if stats.fisher_exact(table)[1] < 0.05 and _above_prop(top_2[0][0], total[0]) and _above_prop(top_2[1][0], total[1]):
             return True
@@ -102,7 +102,7 @@ def _valid_test(link, link_as):
     """
     Only if top2 associated nt are equally represented
     """
-    print "link %s %s" % (link, link_as)
+    # print "link %s %s" % (link, link_as)
     if len(link) > 1:
         sense_pval = _prop(link)
     else:
@@ -261,9 +261,9 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
                     frmt = dict(zip(header.split(":"), frmt.split(':')))
                     if is_good_het(frmt, record):
                         print >>out_handle, line
-    res = pybedtools.BedTool(cpg_filter).window(snp_filter, w=75)
 
     if not file_exists(out_vcf):
+        res = pybedtools.BedTool(cpg_filter).window(snp_filter, w=75)
         with open(out_file, 'w') as out_handle, open(out_vcf, 'w') as vcf_handle:
             _create_vcf_header(cpgvcf, vcf_handle)
             print >>out_handle, "chrom\tCpG_pos\tCpG_nt\tSNP_pos\tAlleles\tassociation_plus\tSNP_reads_minus"
@@ -273,6 +273,7 @@ def cpg_het_pairs(cpgvcf, snpvcf, bam_file, out_file, workdir):
                     link, link_as, align = _make_linkage(bam_file, record[0], int(record[1]), int(record[11]), _get_strand(record))
                     res = "%s\t%s\t%s\t%s\t%s/%s\t%s\t%s" % (record[0], record[1], record[3], record[11], record[13], record[14], _format(link), _format(link_as))
                     chrom, pos, ref, alt, qual, filt, info, frmt, sample = _get_vcf_line(record)
+                    # print res
                     if _valid_test(link, link_as):
                         filt = "PASS"
                         print >>out_handle, res
@@ -314,29 +315,26 @@ def _model(pileup, snp, cpg_st):
                 v_pos.append(_complement(info_snp[0].lower()))
 
 def _make_linkage(bam_file, chrom, cpg, snp, cpg_st):
-    start, end = [cpg-1, snp] if cpg-1 < snp else [snp, cpg-1]
+    start, end = [cpg-1, snp-1] if cpg-1 < snp-1 else [snp-1, cpg-1]
     pairs = _pairs_matrix(bam_file, [chrom, start, end], cpg-1, snp-1)
     link = Counter()
     link_as = Counter()
     align = []
     for pair in pairs:
-        # print pair
-        # print pairs[pair]
-        # print strand
         if len(pairs[pair].keys()) == 1:
             continue
         nts = [pairs[pair]['cpg'].split(":")[0], pairs[pair]['snp'].split(":")[0]]
         align.append("-".join(nts) if cpg < snp else "-".join(nts[::-1]))
         info_snp = pairs[pair]['snp'].split(":")
-        if info_snp[1] == cpg_st:
-            # print pairs[pair]
-            if pairs[pair]['cpg']:
-                info_cpg = pairs[pair]['cpg'].split(":")
-                if info_cpg[1] == cpg_st:
-                    link["v%s/c%s:%s" % (info_snp[0], info_cpg[0], cpg_st)] += 1
-        else:
-            link_as["v%s:%s" % (info_snp[0], info_snp[1])] += 1
-    # print link
+        # if info_snp[1] == cpg_st:
+        # print pairs[pair]
+        if pairs[pair]['cpg']:
+            info_cpg = pairs[pair]['cpg'].split(":")
+            if info_cpg[1] == info_snp[1] and info_cpg[1] == cpg_st:
+                link["v%s/c%s:%s" % (info_snp[0], info_cpg[0], cpg_st)] += 1
+        # else:
+        #    link_as["v%s:%s" % (info_snp[0], info_snp[1])] += 1
+    # print "LINK\n%s\n" % link
     return link, link_as, align
 
 def _pairs_matrix(bam_file, region, cpg, snp):
@@ -380,6 +378,8 @@ def post_processing(vcf_res, vcf_merged, out):
     """
     merge list of vcf files and get stats
     """
+    if len(vcf_res) == 1:
+        return vcf_res
     if not file_exists(vcf_merged):
         cmd = "bcftools merge {0} > {1}".format(" ".join(vcf_res), vcf_merged)
         do.run(cmd, "merge files")
@@ -402,7 +402,6 @@ def post_processing(vcf_res, vcf_merged, out):
         print >>stat_handle, tabulate([[k, v] for k, v in num_call.iteritems()], headers=["# samples", "# of SNPs"])
     with open(out + "_stat.tsv", 'w') as stat_handle:
         print >>stat_handle, tabulate([[k, v] for k, v in num_call_sample.iteritems()], headers=["samples", "# of SNPs"])
-
 
 def detect_asm(data, args):
     vcf_res = []
