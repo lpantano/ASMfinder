@@ -182,4 +182,4 @@ if __name__ == "__main__":
         data = _prepare_samples(args)
         link_sites(data, args)
     if args.run == 'show':
-        plot(args.files, args.region)
+        plot(args.files, args.region, args.out)

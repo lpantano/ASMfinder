@@ -1,6 +1,6 @@
 import os.path as op
 
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 import pysam
 from bcbio.utils import splitext_plus
@@ -41,24 +41,31 @@ def _pairs_matrix(bam_file, region, strand):
 
     return pileup
 
-
-def plot(bams, params):
-    chrom, s, e, strand = params.split(":")
-    s, e = int(s), int(e)
+def plot(bams, params, prefix):
+    chrom, cpg, snp, strand = params.split(":")
+    cpg, snp = int(cpg), int(snp)
+    s, e = min(cpg, snp), max(cpg, snp)
     s, e = s - 10, e + 10
-    for bam_file in bams:
-        sample = op.basename(splitext_plus(bam_file)[0])
-        pairs = _pairs_matrix(bam_file, (chrom, s, e), strand)
-        for read in pairs:
-            r = ""
-            for pos in range(int(s), int(e)):
-                if pos in pairs[read]:
-                    r += pairs[read][int(pos)]
-                else:
-                    r += "-"
-            print r
-            # print "%s %s %s" % (read, pos, pairs[read][pos])
-            #    nt2 = _code(nt2)
-            #else:
-            #    nt1 = _code(nt1)
-            #print "%s %s %s %s" % (nt1, " ".join(spaces), nt2, sample)
+    with open(prefix + ".txt", 'w') as out_handle:
+        for bam_file in bams:
+            link = defaultdict(Counter)
+            sample = op.basename(splitext_plus(bam_file)[0])
+            pairs = _pairs_matrix(bam_file, (chrom, s, e), strand)
+            for read in pairs:
+                r = ""
+                for pos in range(int(s), int(e)):
+                    if pos in pairs[read]:
+                        r += pairs[read][int(pos)]
+                    else:
+                        r += "-"
+
+                    if cpg in pairs[read] and snp in pairs[read]:
+                        link[pairs[read][snp]][pairs[read][cpg]] += 1
+
+                print >>out_handle, r
+
+            for snp_a in link:
+                total = sum(link[snp_a].values())
+                meth = link[snp_a]["C"] if "C" in link[snp_a] else 0
+                print "%s %s %s" % (snp_a, float(meth)/total, sample)
+
