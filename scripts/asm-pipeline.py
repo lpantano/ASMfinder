@@ -28,7 +28,7 @@ from asm.align import create_bam
 from asm.bissnp import call_variations
 from asm.report import create_report
 from asm.select import get_het, is_good_cpg, post_processing, detect_asm
-from asm.show import plot
+from asm.show import plot, region_selection
 
 
 def _update_algorithm(data, resources):
@@ -174,7 +174,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if args.run == 'select':
-        select_regions(args)
+        pairs=[fn for fn in args.files if fn.endswith("tsv")]
+        bams=[fn for fn in args.files if fn.endswith("bam")]
+        region_selection(pairs, bams, args.out, bed_file=args.region, min_samples=args.n_sample)
+        # select_regions(args)
     if args.run == "detection":
         data = _prepare_samples(args)
         detect_positions(data, args)

@@ -3,6 +3,7 @@ import os.path as op
 from collections import defaultdict, Counter
 
 import pysam
+from pybedtools import BedTool
 from bcbio.utils import splitext_plus
 
 
@@ -36,7 +37,7 @@ def _pairs_matrix(bam_file, region, strand):
                 st = "-" if pileupread.alignment.is_reverse else "+"
                 if st == strand:
                     nt = pileupread.alignment.query_sequence[pileupread.query_position]
-                    nt = nt.lower() if strand == "-" else nt
+                    # nt = nt.lower() if strand == "-" else nt
                     pileup[pileupread.alignment.query_name].update({pileupcolumn.pos: nt})
 
     return pileup
@@ -68,4 +69,55 @@ def plot(bams, params, prefix):
                 total = sum(link[snp_a].values())
                 meth = link[snp_a]["C"] if "C" in link[snp_a] else 0
                 print "%s %s %s" % (snp_a, float(meth)/total, sample)
+
+def raw(bams, chrom, cpg, snp, strand, als):
+    cpg, snp = int(cpg), int(snp)
+    s, e = min(cpg, snp), max(cpg, snp)
+    s, e = s - 1, e + 1
+    res = []
+    for bam_file in bams:
+        link = defaultdict(Counter)
+        sample = op.basename(splitext_plus(bam_file)[0])
+        pairs = _pairs_matrix(bam_file, (chrom, s, e), strand)
+        for read in pairs:
+            if cpg in pairs[read] and snp in pairs[read]:
+                link[pairs[read][snp]][pairs[read][cpg]] += 1
+
+        nom_meth, meth = ('T', 'C') if strand == "+" else ('A', 'G')
+        for snp_a in link:
+            total = sum(link[snp_a].values())
+            if snp_a in als:
+                res.append("%s %s %s %s %s %s %s %s %s" % (chrom, snp, snp_a, total, cpg, strand,link[snp_a][meth], link[snp_a][nom_meth], sample))
+    return res
+
+NT_METH = {'C': '+', 'G': '-'}
+
+def region_selection(pair_file, bams, prefix, bed_file=None, min_samples=1):
+    common = Counter()
+    print min_samples
+    for fn in pair_file:
+        print fn
+        with open(fn) as in_handle:
+            for line in in_handle:
+                cols = line.strip().split()
+                if cols[2] in NT_METH:
+                    strand = NT_METH[cols[2]]
+                    common["%s:%s:%s:%s:%s" % (cols[0], cols[1], cols[3], strand, cols[4])] += 1
+    string = ""
+    for c in common:
+        if common[c] > int(min_samples):
+            cols = c.split(":")
+            string += "%s\t%s\t%s\t%s\n" % (cols[0], cols[1], int(cols[1]) + 1, c)
+
+    if bed_file:
+        valid_pairs = BedTool(string, from_string=True).intersect(BedTool(bed_file))
+    else:
+        valid_pairs = BedTool(string, from_string=True)
+
+    with open(prefix + ".tsv", 'w') as out_handle:
+        print >>out_handle, "chrom snp_pos allele counts cpg_pos strand meth_C non_meth_C sample"
+        for pair in valid_pairs:
+            c = pair[3].strip().split(":")
+            print >>out_handle, "\n".join(raw(bams, c[0], int(c[1]) - 1, int(c[2]) - 1, c[3], c[4].split("/")))
+
 
