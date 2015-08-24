@@ -28,7 +28,7 @@ from asm.align import create_bam
 from asm.bissnp import call_variations
 from asm.report import create_report
 from asm.select import get_het, is_good_cpg, post_processing, detect_asm
-from asm.show import plot, region_selection
+from asm.show import plot, region_selection, region_selection_by_read
 
 
 def _update_algorithm(data, resources):
@@ -168,15 +168,21 @@ if __name__ == "__main__":
 
     parser.add_argument("--out", help="output file.")
     parser.add_argument("files", nargs="*", help="Bam files.")
-    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection', 'link', 'show'])
+    parser.add_argument("--run", required=1, help="Calculate bam stats", choices=['select', 'detection', 'link', 'show', 'raw'])
     parser.add_argument("--n_sample", default=1000, help="sample bed files with this number of lines")
     parser.add_argument("--seed", help="replication of sampling")
     args = parser.parse_args()
 
     if args.run == 'select':
-        pairs=[fn for fn in args.files if fn.endswith("tsv")]
-        bams=[fn for fn in args.files if fn.endswith("bam")]
+        pairs = [fn for fn in args.files if fn.endswith("tsv")]
+        bams = [fn for fn in args.files if fn.endswith("bam")]
         region_selection(pairs, bams, args.out, bed_file=args.region, min_samples=args.n_sample)
+    if args.run == 'raw':
+        pairs = [fn for fn in args.files if fn.endswith("tsv")]
+        bams = [fn for fn in args.files if fn.endswith("bam")]
+        cpg = [fn for fn in args.files if fn.endswith("_rawcpg.vcf")]
+        snp = [fn for fn in args.files if fn.endswith("_rawsnp.vcf")]
+        region_selection_by_read(pairs, cpg, snp, bams, args.out, args.region)
         # select_regions(args)
     if args.run == "detection":
         data = _prepare_samples(args)

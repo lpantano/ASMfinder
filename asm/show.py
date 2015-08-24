@@ -120,4 +120,73 @@ def region_selection(pair_file, bams, prefix, bed_file=None, min_samples=1):
             c = pair[3].strip().split(":")
             print >>out_handle, "\n".join(raw(bams, c[0], int(c[1]) - 1, int(c[2]) - 1, c[3], c[4].split("/")))
 
+def region_selection_by_read(pair_file, cpg_vcf, snp_vcf, bams, prefix, bed_file, min_samples=1):
+    common = Counter()
+    for fn in pair_file:
+        print fn
+        with open(fn) as in_handle:
+            for line in in_handle:
+                cols = line.strip().split()
+                if cols[2] in NT_METH:
+                    strand = NT_METH[cols[2]]
+                    common["%s:%s:%s:%s:%s" % (cols[0], cols[1], cols[3], strand, cols[4])] += 1
+    string = ""
+    for c in common:
+        if common[c] > int(min_samples):
+            cols = c.split(":")
+            string += "%s\t%s\t%s\t%s\n" % (cols[0], cols[1], int(cols[1]) + 1, c)
 
+    bed_valid_asm = BedTool(string, from_string=True)
+    with open(prefix + ".tsv", 'w') as out_handle:
+        print >>out_handle, "sample read chrom position strand call type asm"
+        for line in BedTool(bed_file):
+            single_line = BedTool("\t".join(line), from_string=True)
+            this_region_asm = BedTool(bed_valid_asm).intersect(single_line)
+
+            asm_cpg, asm_snp = set(), set()
+            for pair in this_region_asm:
+                c = pair[3].strip().split(":")
+                asm_cpg.add(str(int(c[1]) - 1))
+                asm_snp.add(str(int(c[2]) - 1))
+
+            for bam in bams:
+                this_cpg_vcf = bam.replace("_recal1.bam", ".rawcpg.vcf")
+                this_snp_vcf = bam.replace("_recal1.bam", ".rawsnp.vcf")
+                this_region_cpg = [l[1] for l in BedTool(this_cpg_vcf).intersect(single_line)]
+                this_region_snp = [l[1] for l in BedTool(this_snp_vcf).intersect(single_line)]
+                res = _get_reads(bam, [line[0], int(line[1]), int(line[2])],
+                                  asm_snp, asm_cpg, this_region_cpg, this_region_snp, c[3])
+                print >>out_handle, "\n".join(res)
+
+def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg, snp, strand):
+    """
+    Get reads from the cpg region and pairs
+    cpg nt with snp nt
+    """
+    name = op.basename(op.splitext(bam_file)[0])
+    line = []
+    c, s, e = region
+    samfile = pysam.AlignmentFile(bam_file, "rb")
+    for pileupcolumn in samfile.pileup(c, s, e):
+        # print ("\ncoverage at base %s = %s" % (pileupcolumn.pos, pileupcolumn.n))
+        for pileupread in pileupcolumn.pileups:
+            if not pileupread.is_del and not pileupread.is_refskip:  # query position is None if is_del or is_refskip is set.
+                st = "-" if pileupread.alignment.is_reverse else "+"
+                if st == strand:
+                    nt = pileupread.alignment.query_sequence[pileupread.query_position]
+                    pos = str(pileupread.alignment.pos + pileupread.query_position)
+                    # print pos
+                    # nt = nt.lower() if strand == "-" else nt
+                    nt_type = []
+                    if pos in asm_snp:
+                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "ASM"]
+                    elif pos in asm_cpg:
+                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "ASM"]
+                    elif pos in cpg:
+                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "None"]
+                    elif pos in snp:
+                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "None"]
+                    if nt_type:
+                        line.append(" ".join(nt_type))
+
+    return line
