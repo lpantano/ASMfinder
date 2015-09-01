@@ -160,6 +160,7 @@ def region_selection_by_read(pair_file, cpg_vcf, snp_vcf, bams, prefix, bed_file
                 print >>out_handle, "\n".join(res)
 
 NT_VALID = {'C': '+', 'G': '-', 'T': '+', 'A': '-'}
+
 def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg_info, snp, strand):
     """
     Get reads from the cpg region and pairs
@@ -187,7 +188,7 @@ def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg_info, snp, strand):
                     nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "ASM"]
                 elif pos in asm_cpg:
                     nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "ASM"]
-                elif pos in cpg and NT_VALID[nt] == cpg[pos]:
+                elif pos in cpg and NT_VALID[nt] == cpg[pos] and st == cpg[pos]:
                     nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "None"]
                     # print [pos, st, pileupread.alignment.is_reverse, nt, cpg[pos]]
                 elif pos in snp:
