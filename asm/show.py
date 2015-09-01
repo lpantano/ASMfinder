@@ -152,13 +152,15 @@ def region_selection_by_read(pair_file, cpg_vcf, snp_vcf, bams, prefix, bed_file
             for bam in bams:
                 this_cpg_vcf = bam.replace("_recal1.bam", ".rawcpg.vcf")
                 this_snp_vcf = bam.replace("_recal1.bam", ".rawsnp.vcf")
-                this_region_cpg = [l[1] for l in BedTool(this_cpg_vcf).intersect(single_line)]
+                this_region_cpg = [[l[1], l[7].split(";")[0][3:]] for l in BedTool(this_cpg_vcf).intersect(single_line)]
                 this_region_snp = [l[1] for l in BedTool(this_snp_vcf).intersect(single_line)]
                 res = _get_reads(bam, [line[0], int(line[1]), int(line[2])],
-                                  asm_snp, asm_cpg, this_region_cpg, this_region_snp, c[3])
+                                 asm_snp, asm_cpg, this_region_cpg, this_region_snp, c[3])
+                # print "\n".join(res)
                 print >>out_handle, "\n".join(res)
 
-def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg, snp, strand):
+NT_VALID = {'C': '+', 'G': '-', 'T': '+', 'A': '-'}
+def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg_info, snp, strand):
     """
     Get reads from the cpg region and pairs
     cpg nt with snp nt
@@ -167,26 +169,30 @@ def _get_reads(bam_file, region, asm_snp, asm_cpg, cpg, snp, strand):
     line = []
     c, s, e = region
     samfile = pysam.AlignmentFile(bam_file, "rb")
+    cpg = dict(zip([item[0] for item in cpg_info], [item[1] for item in cpg_info]))
+
     for pileupcolumn in samfile.pileup(c, s, e):
         # print ("\ncoverage at base %s = %s" % (pileupcolumn.pos, pileupcolumn.n))
         for pileupread in pileupcolumn.pileups:
             if not pileupread.is_del and not pileupread.is_refskip:  # query position is None if is_del or is_refskip is set.
                 st = "-" if pileupread.alignment.is_reverse else "+"
-                if st == strand:
-                    nt = pileupread.alignment.query_sequence[pileupread.query_position]
-                    pos = str(pileupread.alignment.pos + pileupread.query_position)
-                    # print pos
-                    # nt = nt.lower() if strand == "-" else nt
-                    nt_type = []
-                    if pos in asm_snp:
-                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "ASM"]
-                    elif pos in asm_cpg:
-                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "ASM"]
-                    elif pos in cpg:
-                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "None"]
-                    elif pos in snp:
-                        nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "None"]
-                    if nt_type:
-                        line.append(" ".join(nt_type))
+                # if st == strand:
+                nt = pileupread.alignment.query_sequence[pileupread.query_position]
+                pos = str(pileupread.alignment.pos + pileupread.query_position)
+                # nt = nt.lower() if strand == "-" else nt
+                nt_type = []
+                if nt == "N":
+                    continue
+                if pos in asm_snp:
+                    nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "ASM"]
+                elif pos in asm_cpg:
+                    nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "ASM"]
+                elif pos in cpg and NT_VALID[nt] == cpg[pos]:
+                    nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "CpG", "None"]
+                    # print [pos, st, pileupread.alignment.is_reverse, nt, cpg[pos]]
+                elif pos in snp:
+                    nt_type = [name, pileupread.alignment.query_name, c, pos, st, nt, "SNP", "None"]
+                if nt_type:
+                    line.append(" ".join(nt_type))
 
     return line
